@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  nowonbun-mariadb-mcp:
+    build: .
+    image: nowonbun-mariadb-mcp:latest
+    environment:
+      - DB_MCP_CONFIG=/config/config.toml
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+    stdin_open: true   # keep STDIN open for MCP stdio
+    tty: false         # do not allocate a TTY (MCP expects raw stdio)
+    # default command runs server.py (from Dockerfile)

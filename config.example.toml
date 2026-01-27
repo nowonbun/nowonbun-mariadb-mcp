@@ -1,0 +1,15 @@
+[mysql]
+host = "127.0.0.1"
+port = 3306
+user = "user"
+password = "password"
+database = "db"
+connect_timeout = 5
+
+[permissions]
+select = true
+insert = false
+update = false
+delete = false
+ddl = false
+max_rows = 500
