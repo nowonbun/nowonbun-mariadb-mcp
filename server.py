@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import os
 import re
 import sys
@@ -16,9 +15,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 
 # MCP server primitives
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp import types
+from mcp.server.fastmcp import FastMCP
 
 
 @dataclass
@@ -170,6 +167,26 @@ class MySQLClient:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="MySQL MCP server")
     parser.add_argument("--config", default=os.environ.get("DB_MCP_CONFIG", "config.toml"))
+    parser.add_argument(
+        "--transport",
+        default=os.environ.get("MCP_TRANSPORT", "stdio"),
+        choices=["stdio", "streamable-http"],
+        help="Transport to use: stdio or streamable-http",
+    )
+    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8000")))
+    parser.add_argument(
+        "--stateless-http",
+        action="store_true",
+        default=os.environ.get("MCP_STATELESS_HTTP", "true").lower() == "true",
+        help="Use stateless HTTP mode (recommended for streamable-http)",
+    )
+    parser.add_argument(
+        "--json-response",
+        action="store_true",
+        default=os.environ.get("MCP_JSON_RESPONSE", "true").lower() == "true",
+        help="Use JSON responses instead of SSE (recommended for streamable-http)",
+    )
     args = parser.parse_args(argv)
 
     config_path = args.config
@@ -181,99 +198,62 @@ def main(argv: Optional[List[str]] = None) -> int:
     mysql_cfg, perms = load_config(config_path)
     client = MySQLClient(mysql_cfg, perms)
 
-    server = Server("nowonbun-mariadb-mcp")
+    mcp = FastMCP(
+        "nowonbun-mariadb-mcp",
+        host=args.host,
+        port=args.port,
+        stateless_http=args.stateless_http,
+        json_response=args.json_response,
+    )
 
-    # Define tool registry compatible with this MCP Server API
-    TOOL_SPECS: Dict[str, Dict[str, Any]] = {
-        "query": {
-            "description": (
-                "Execute a single SQL statement on the configured MySQL instance. "
-                "Permissions (select/insert/update/delete/ddl) are enforced by server config."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "sql": {"type": "string", "description": "Single SQL statement"},
-                    "params": {
-                        "type": "object",
-                        "description": "Optional named parameters (PyMySQL mapping)",
-                    },
-                },
-                "required": ["sql"],
-            },
-        },
-        "whoami": {
-            "description": "Return connection and permission summary (no secrets).",
-            "inputSchema": {"type": "object", "properties": {}},
-        },
-        "health": {
-            "description": "Ping the database and return 'ok' if reachable",
-            "inputSchema": {"type": "object", "properties": {}},
-        },
-    }
-
-    @server.list_tools()
-    async def list_tools():
-        tools: List[types.Tool] = []
-        for name, spec in TOOL_SPECS.items():
-            tools.append(
-                types.Tool(
-                    name=name,
-                    description=spec.get("description"),
-                    inputSchema=spec.get("inputSchema", {"type": "object"}),
-                )
-            )
-        return tools
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: Dict[str, Any]):
+    @mcp.tool()
+    def query(sql: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Execute a single SQL statement with permission enforcement."""
+        if not isinstance(sql, str) or not sql.strip():
+            return {"error": "sql must be a non-empty string"}
         try:
-            if name == "query":
-                sql = arguments.get("sql")
-                params = arguments.get("params")
-                if not isinstance(sql, str) or not sql.strip():
-                    return [types.TextContent(type="text", text="ERROR: 'sql' must be a non-empty string")]  # type: ignore[return-value]
-                result = client.execute(sql, params)
-                text = json.dumps(result, ensure_ascii=False, indent=2)
-                return [types.TextContent(type="text", text=text)]
-            elif name == "whoami":
-                summary = {
-                    "mysql": {
-                        "host": mysql_cfg.host,
-                        "port": mysql_cfg.port,
-                        "database": mysql_cfg.database,
-                        "user": mysql_cfg.user,
-                    },
-                    "permissions": {
-                        "select": perms.select,
-                        "insert": perms.insert,
-                        "update": perms.update,
-                        "delete": perms.delete,
-                        "ddl": perms.ddl,
-                        "max_rows": perms.max_rows,
-                    },
-                }
-                return [types.TextContent(type="text", text=json.dumps(summary, ensure_ascii=False, indent=2))]
-            elif name == "health":
-                client.ping()
-                return [types.TextContent(type="text", text="ok")]
-            else:
-                return [types.TextContent(type="text", text=f"ERROR: Unknown tool '{name}'")]
+            return client.execute(sql, params)
         except (PermissionError, ValueError) as e:
-            return [types.TextContent(type="text", text=f"ERROR: {e}")]
-        except Exception as e:  # pragma: no cover
-            return [types.TextContent(type="text", text=f"ERROR: {type(e).__name__}: {e}")]
+            return {"error": str(e)}
 
-    async def run() -> None:
-        async with stdio_server() as (read, write):
-            init_opts = server.create_initialization_options()
-            await server.run(read, write, init_opts)
+    @mcp.tool()
+    def whoami() -> Dict[str, Any]:
+        """Return connection and permission summary (no secrets)."""
+        return {
+            "mysql": {
+                "host": mysql_cfg.host,
+                "port": mysql_cfg.port,
+                "database": mysql_cfg.database,
+                "user": mysql_cfg.user,
+            },
+            "permissions": {
+                "select": perms.select,
+                "insert": perms.insert,
+                "update": perms.update,
+                "delete": perms.delete,
+                "ddl": perms.ddl,
+                "max_rows": perms.max_rows,
+            },
+        }
 
-    # Run event loop
-    import asyncio
+    @mcp.tool()
+    def health() -> str:
+        """Ping the database and return 'ok' if reachable."""
+        client.ping()
+        return "ok"
 
     try:
-        asyncio.run(run())
+        if args.transport == "streamable-http":
+            try:
+                mcp.run(
+                    transport="streamable-http",
+                    host=args.host,
+                    port=args.port,
+                )
+            except TypeError:
+                mcp.run(transport="streamable-http")
+        else:
+            mcp.run(transport="stdio")
     finally:
         client.close()
 

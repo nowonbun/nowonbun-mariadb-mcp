@@ -125,3 +125,15 @@ args = ["compose", "run", "--rm", "-i", "nowonbun-mariadb-mcp"]
 - 접속 실패: `mysql.host/port/user/password/database`와 방화벽 설정 확인
 - 권한 오류: `permissions.*`와 DB 계정 권한 확인
 - 응답이 느림: `permissions.max_rows` 값을 조정
+
+HTTP (streamable) mode
+----------------------
+To run as a long-lived HTTP server (compatible with `docker compose up -d`):
+- Use `docker-compose.yml` (maps port 8000).
+- MCP endpoint will be `http://localhost:8000/mcp`.
+
+Codex config (HTTP):
+```
+[mcp_servers.nowonbun-mariadb-mcp]
+url = "http://localhost:8000/mcp"
+```

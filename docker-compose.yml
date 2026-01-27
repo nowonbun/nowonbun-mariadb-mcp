@@ -5,8 +5,13 @@ services:
     image: nowonbun-mariadb-mcp:latest
     environment:
       - DB_MCP_CONFIG=/config/config.toml
+      - MCP_TRANSPORT=streamable-http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - MCP_STATELESS_HTTP=true
+      - MCP_JSON_RESPONSE=true
     volumes:
       - ./config.toml:/config/config.toml:ro
-    stdin_open: true   # keep STDIN open for MCP stdio
-    tty: false         # do not allocate a TTY (MCP expects raw stdio)
+    ports:
+      - "8000:8000"
     # default command runs server.py (from Dockerfile)

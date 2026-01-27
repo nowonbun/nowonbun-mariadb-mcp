@@ -19,6 +19,6 @@ COPY config.example.toml ./config.toml
 # Default: use /app/config.toml unless overridden by env var DB_MCP_CONFIG
 ENV DB_MCP_CONFIG=/app/config.toml
 
-# MCP runs over stdio; container stays in foreground
+# MCP runs over HTTP when MCP_TRANSPORT=streamable-http (see docker-compose)
 CMD ["python", "server.py"]
 
