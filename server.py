@@ -15,7 +15,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 
 # MCP server primitives
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 
 @dataclass
@@ -38,11 +38,19 @@ class MysqlConfig:
     connect_timeout: int = 5
 
 
-def load_config(path: str) -> Tuple[MysqlConfig, Permissions]:
+@dataclass
+class AuthConfig:
+    api_key: str = ""
+    header: str = "x-api-key"
+    allow_bearer: bool = True
+
+
+def load_config(path: str) -> Tuple[MysqlConfig, Permissions, AuthConfig]:
     with open(path, "rb") as f:
         data = tomllib.load(f)
     mysql = data.get("mysql", {})
     perms = data.get("permissions", {})
+    auth = data.get("auth", {})
     mysql_cfg = MysqlConfig(
         host=mysql.get("host", "127.0.0.1"),
         port=int(mysql.get("port", 3306)),
@@ -59,7 +67,11 @@ def load_config(path: str) -> Tuple[MysqlConfig, Permissions]:
         ddl=bool(perms.get("ddl", False)),
         max_rows=int(perms.get("max_rows", 1000)),
     )
-    return mysql_cfg, permissions
+    api_key = os.environ.get("DB_MCP_API_KEY", auth.get("api_key", ""))
+    header = os.environ.get("DB_MCP_API_KEY_HEADER", auth.get("header", "x-api-key"))
+    allow_bearer = bool(auth.get("allow_bearer", True))
+    auth_cfg = AuthConfig(api_key=str(api_key or ""), header=str(header or "x-api-key"), allow_bearer=allow_bearer)
+    return mysql_cfg, permissions, auth_cfg
 
 
 class MySQLClient:
@@ -164,6 +176,36 @@ class MySQLClient:
                 return info
 
 
+def _extract_api_key(request: Any, header_name: str, allow_bearer: bool) -> str:
+    if request is None:
+        return ""
+    key = request.headers.get(header_name, "")
+    if key:
+        return key
+    if allow_bearer:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+    return ""
+
+
+def _check_api_key(ctx: Optional[Context], auth_cfg: AuthConfig) -> Optional[Dict[str, Any]]:
+    if not auth_cfg.api_key:
+        return None
+    if ctx is None:
+        return {"error": "unauthorized: missing request context"}
+    try:
+        request = ctx.request_context.request
+    except Exception:
+        request = None
+    if request is None:
+        return None
+    provided = _extract_api_key(request, auth_cfg.header, auth_cfg.allow_bearer)
+    if provided != auth_cfg.api_key:
+        return {"error": "unauthorized: missing or invalid API key"}
+    return None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="MySQL MCP server")
     parser.add_argument("--config", default=os.environ.get("DB_MCP_CONFIG", "config.toml"))
@@ -195,7 +237,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(base_dir, config_path)
 
-    mysql_cfg, perms = load_config(config_path)
+    mysql_cfg, perms, auth_cfg = load_config(config_path)
     client = MySQLClient(mysql_cfg, perms)
 
     mcp = FastMCP(
@@ -207,8 +249,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     @mcp.tool()
-    def query(sql: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def query(sql: str, params: Optional[Dict[str, Any]] = None, ctx: Context) -> Dict[str, Any]:
         """Execute a single SQL statement with permission enforcement."""
+        auth_error = _check_api_key(ctx, auth_cfg)
+        if auth_error:
+            return auth_error
         if not isinstance(sql, str) or not sql.strip():
             return {"error": "sql must be a non-empty string"}
         try:
@@ -217,8 +262,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             return {"error": str(e)}
 
     @mcp.tool()
-    def whoami() -> Dict[str, Any]:
+    def whoami(ctx: Context) -> Dict[str, Any]:
         """Return connection and permission summary (no secrets)."""
+        auth_error = _check_api_key(ctx, auth_cfg)
+        if auth_error:
+            return auth_error
         return {
             "mysql": {
                 "host": mysql_cfg.host,
@@ -237,8 +285,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         }
 
     @mcp.tool()
-    def health() -> str:
+    def health(ctx: Context) -> str:
         """Ping the database and return 'ok' if reachable."""
+        auth_error = _check_api_key(ctx, auth_cfg)
+        if auth_error:
+            return "unauthorized: missing or invalid API key"
         client.ping()
         return "ok"
 

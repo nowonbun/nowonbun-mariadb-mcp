@@ -99,6 +99,10 @@ args = ["compose", "run", "--rm", "-i", "nowonbun-mariadb-mcp"]
   - `delete`: `DELETE`
   - `ddl`: `CREATE` / `ALTER` / `DROP` / `TRUNCATE`
   - `max_rows`: `SELECT` 최대 반환 행 수(0이면 제한 없음)
+- `[auth]`:
+  - `api_key`: fixed API key for HTTP requests (empty disables auth)
+  - `header`: header name to read the key from (default `x-api-key`)
+  - `allow_bearer`: allow `Authorization: Bearer <key>` when true
 
 제공 MCP 도구
 -------------
@@ -119,6 +123,8 @@ args = ["compose", "run", "--rm", "-i", "nowonbun-mariadb-mcp"]
 - 최소 권한 원칙을 권장합니다.
 - `DB_MCP_CONFIG` 환경변수로 설정 파일 경로를 지정할 수 있습니다
   (`--config`보다 우선).
+- HTTP mode: include `x-api-key: <key>` or `Authorization: Bearer <key>` header when `auth.api_key` is set.
+- You can override auth via env: `DB_MCP_API_KEY`, `DB_MCP_API_KEY_HEADER`.
 
 문제 해결
 ---------

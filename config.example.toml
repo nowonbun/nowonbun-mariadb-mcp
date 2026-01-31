@@ -13,3 +13,11 @@ update = false
 delete = false
 ddl = false
 max_rows = 500
+
+[auth]
+# If set, HTTP requests must include this key.
+api_key = ""
+# Header name to read the key from (case-insensitive).
+header = "x-api-key"
+# Also accept "Authorization: Bearer <key>" when true.
+allow_bearer = true
