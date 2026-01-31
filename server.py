@@ -249,7 +249,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     @mcp.tool()
-    def query(sql: str, params: Optional[Dict[str, Any]] = None, ctx: Context) -> Dict[str, Any]:
+    def query(ctx: Context, sql: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a single SQL statement with permission enforcement."""
         auth_error = _check_api_key(ctx, auth_cfg)
         if auth_error:
