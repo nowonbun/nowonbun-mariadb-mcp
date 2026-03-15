@@ -1,8 +1,19 @@
-데이터베이스에서 디비 확인 mcp는 mcp_servers.mariadb 이다.
+﻿---
+name: mariadb-mcp
+description: MariaDB MCP 서버 사용 규칙과 스키마 관례를 확인해야 할 때 사용한다.
+---
 
-핵심 원칙:
+# MariaDB MCP Skill
 
-1. 기본적으로 조회만 가능하고 데이터를 수정하는 건 금지한다.
-2. StockSearcher 프로젝트의 관계된 데이터 베이스는 stock이다.
-3. 한국 주식의 관계된 디비는 postfix로 _KR이 있다.
-4. 일본 주식의 관계된 디비는 postfix로 _JP가 있다.
+## 목적
+MariaDB MCP 서버를 안전하게 사용하고 데이터베이스 관례를 준수한다.
+
+## 규칙
+1. 기본적으로 조회만 수행하고, 데이터 변경은 금지한다.
+1. StockSearcher 관련 데이터베이스 이름은 `stock`이다.
+1. 한국 주식 테이블은 postfix로 `_KR`을 사용한다.
+1. 일본 주식 테이블은 postfix로 `_JP`를 사용한다.
+
+## 산출물 형식
+1. 수행 가능한 작업 범위를 먼저 명시한다.
+1. 필요한 경우 간단한 조회 SQL 예시를 포함한다.
