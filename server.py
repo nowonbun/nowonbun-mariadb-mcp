@@ -182,6 +182,15 @@ def _extract_api_key(request: Any, header_name: str, allow_bearer: bool) -> str:
     key = request.headers.get(header_name, "")
     if key:
         return key
+    # Also allow query parameter (e.g., ?x-api-key=...)
+    try:
+        query_params = getattr(request, "query_params", None)
+        if query_params is not None:
+            key = query_params.get(header_name, "")
+            if key:
+                return key
+    except Exception:
+        pass
     if allow_bearer:
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
